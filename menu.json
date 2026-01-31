@@ -1,0 +1,42 @@
+[
+    {
+        "id": 1,
+        "category": "Burgers",
+        "name": "Zinger Burger",
+        "description": "Crunchy chicken fillet with lettuce and mayo",
+        "price": 5.99,
+        "available": true
+    },
+    {
+        "id": 2,
+        "category": "Burgers",
+        "name": "Beef Smash Burger",
+        "description": "Double juicy beef patty with melted cheese",
+        "price": 8.50,
+        "available": true
+    },
+    {
+        "id": 3,
+        "category": "Pizza",
+        "name": "Chicken Fajita",
+        "description": "Spicy chicken, onions, and bell peppers",
+        "price": 12.99,
+        "available": true
+    },
+    {
+        "id": 4,
+        "category": "Drinks",
+        "name": "Coca Cola",
+        "description": "Chilled 500ml bottle",
+        "price": 1.50,
+        "available": true
+    },
+    {
+        "id": 5,
+        "category": "Drinks",
+        "name": "Mint Margarita",
+        "description": "Fresh mint and lemon refreshing drink",
+        "price": 3.00,
+        "available": true
+    }
+]
