@@ -33,7 +33,7 @@ WS_URL = f"wss://{HOST}/ws/google.ai.generativelanguage.v1beta.GenerativeService
 @app.on_event("startup")
 def on_startup():
     init_db()
-
+# //gfgf
 def save_order(item: str, quantity: int, price: float):
     try:
         db = next(get_db())
