@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Wait for It...</title>
+    <style>
+        body { background: #0f172a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; }
+        button { padding: 20px 40px; font-size: 20px; background: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #2563eb; }
+        button.recording { background: #ef4444; }
+        #status { margin-top: 20px; color: #94a3b8; font-weight: bold; }
+        .live { color: #4ade80 !important; }
+    </style>
+</head>
+<body>
+    <button id="btn" onclick="toggleChat()">Start Chatting</button>
+    <div id="status">Ready</div>
+
+    <script>
+        let socket, ctx, processor, input, globalStream;
+        let isChatting = false;
+        let nextStartTime = 0;
+
+        async function toggleChat() {
+            if (isChatting) {
+                stop();
+            } else {
+                start();
+            }
+        }
+
+        async function start() {
+            isChatting = true;
+            document.getElementById("btn").innerText = "Stop";
+            document.getElementById("btn").className = "recording";
+            document.getElementById("status").innerText = "Connecting...";
+
+            ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+            
+            // Connect to Backend
+            socket = new WebSocket("ws://localhost:8000/ws");
+
+            socket.onopen = async () => {
+                document.getElementById("status").innerText = "🔴 LIVE - SPEAK NOW";
+                document.getElementById("status").className = "live";
+
+                // 🟢 CRITICAL FIX: Echo Cancellation
+                try {
+                    globalStream = await navigator.mediaDevices.getUserMedia({ 
+                        audio: { 
+                            sampleRate: 24000, 
+                            channelCount: 1,
+                            echoCancellation: true,      // Prevents AI hearing itself
+                            noiseSuppression: true,      // Removes background noise
+                            autoGainControl: true        // Normalizes volume
+                        } 
+                    });
+                } catch (err) {
+                    alert("Microphone Error: " + err.message);
+                    stop();
+                    return;
+                }
+
+                input = ctx.createMediaStreamSource(globalStream);
+                processor = ctx.createScriptProcessor(4096, 1, 1);
+                
+                processor.onaudioprocess = (e) => {
+                    if (socket.readyState === 1) {
+                        const float32 = e.inputBuffer.getChannelData(0);
+                        const int16 = new Int16Array(float32.length);
+                        for (let i = 0; i < float32.length; i++) {
+                            let s = Math.max(-1, Math.min(1, float32[i]));
+                            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                        }
+                        const binary = String.fromCharCode(...new Uint8Array(int16.buffer));
+                        socket.send(JSON.stringify({ type: "audio", audio: btoa(binary) }));
+                    }
+                };
+                input.connect(processor);
+                processor.connect(ctx.destination);
+            };
+
+            socket.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type === 'audio') {
+                    playAudioChunk(data.data);
+                }
+            };
+
+            socket.onclose = stop;
+        }
+
+        function playAudioChunk(base64) {
+            // Convert Base64 to Audio Buffer
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const float32 = new Float32Array(bytes.length / 2);
+            const view = new DataView(bytes.buffer);
+            for (let i = 0; i < bytes.length / 2; i++) float32[i] = view.getInt16(i * 2, true) / 32768;
+            
+            const buffer = ctx.createBuffer(1, float32.length, 24000);
+            buffer.getChannelData(0).set(float32);
+            
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            
+            // Queue Logic: Ensure smooth playback
+            const currentTime = ctx.currentTime;
+            if (nextStartTime < currentTime) {
+                nextStartTime = currentTime;
+            }
+            source.start(nextStartTime);
+            nextStartTime += buffer.duration;
+        }
+
+        function stop() {
+            isChatting = false;
+            document.getElementById("btn").innerText = "Start Chatting";
+            document.getElementById("btn").className = "";
+            document.getElementById("status").innerText = "Ready";
+            document.getElementById("status").className = "";
+
+            if(socket) socket.close();
+            if(globalStream) globalStream.getTracks().forEach(t => t.stop());
+            if(ctx) ctx.close();
+        }
+    </script>
+</body>
+</html>
