@@ -34,13 +34,13 @@ WS_URL = f"wss://{HOST}/ws/google.ai.generativelanguage.v1beta.GenerativeService
 def on_startup():
     init_db()
 # //gfgf
-def save_order(item: str, quantity: int, price: float):
+def save_order(item: str, quantity: int, price: float, customer_name: str):
     try:
         db = next(get_db())
-        new_order = Order(item=item, quantity=quantity, price=price, status="pending")
+        new_order = Order(item=item, quantity=quantity, price=price, status="pending", customer_name=customer_name)
         db.add(new_order)
         db.commit()
-        logger.info(f"✅ DATABASE SAVED: {quantity}x {item} for ${price}")
+        logger.info(f"✅ DATABASE SAVED: {quantity}x {item} for Rs.{price} (Customer: {customer_name})")
         db.close()
     except Exception as e:
         logger.error(f"❌ DB ERROR: {e}")
@@ -54,9 +54,10 @@ TOOL_DEFINITIONS = [{
             "properties": {
                 "item": {"type": "STRING"},
                 "quantity": {"type": "INTEGER"},
-                "price": {"type": "NUMBER"}
+                "price": {"type": "NUMBER"},
+                "name": {"type": "STRING"}
             },
-            "required": ["item", "quantity", "price"]
+            "required": ["item", "quantity", "price" ,"name"]
         }
     }]
 }]
@@ -114,8 +115,12 @@ class GeminiChatbot:
                             1. Speak in a natural mix of **English + Roman Urdu**.
                             2. You can ONLY sell items listed in the MENU DATABASE above.
                             3. If an item is not in the list, politely say it is unavailable.
-                            4. Confirm the exact price from the menu before calling the 'place_order' tool.
-                            5. Once confirmed, call the 'place_order' tool immediately.
+                            4. Answer questions about ingredients or price.
+                            
+                            **CRITICAL ORDERING RULES:**
+                            5. IMPORTANT: Before confirming the order, YOU MUST ASK FOR THE CUSTOMER'S NAME.
+                            6. Once you have the Item, Quantity, and the Customer's Name, call the 'place_order' tool.
+                            7. Do not call the tool until you know who the customer is.
                             """}]
                         }
                     }
@@ -143,7 +148,7 @@ class GeminiChatbot:
                                 for fc in response["toolCall"]["functionCalls"]:
                                     if fc["name"] == "place_order":
                                         args = fc["args"]
-                                        save_order(args["item"], int(args["quantity"]), float(args["price"]))
+                                        save_order(args["item"], int(args["quantity"]), float(args["price"]), args["name"])
                                         await self.ws.send(json.dumps({
                                             "toolResponse": {
                                                 "functionResponses": [{

@@ -1,42 +1,32 @@
 [
-    {
-        "id": 1,
-        "category": "Burgers",
-        "name": "Zinger Burger",
-        "description": "Crunchy chicken fillet with lettuce and mayo",
-        "price": 5.99,
-        "available": true
-    },
-    {
-        "id": 2,
-        "category": "Burgers",
-        "name": "Beef Smash Burger",
-        "description": "Double juicy beef patty with melted cheese",
-        "price": 8.50,
-        "available": true
-    },
-    {
-        "id": 3,
-        "category": "Pizza",
-        "name": "Chicken Fajita",
-        "description": "Spicy chicken, onions, and bell peppers",
-        "price": 12.99,
-        "available": true
-    },
-    {
-        "id": 4,
-        "category": "Drinks",
-        "name": "Coca Cola",
-        "description": "Chilled 500ml bottle",
-        "price": 1.50,
-        "available": true
-    },
-    {
-        "id": 5,
-        "category": "Drinks",
-        "name": "Mint Margarita",
-        "description": "Fresh mint and lemon refreshing drink",
-        "price": 3.00,
-        "available": true
-    }
+  {
+    "category": "Main Course",
+    "items": [
+      { "name": "Cheeseburger", "price": 200, "description": "Classic beef patty with cheese and fresh lettuce" },
+      { "name": "Cheese sandwich", "price": 250, "description": "Grilled sandwich loaded with melted cheese" },
+      { "name": "Chicken burgers", "price": 300, "description": "Juicy chicken patty with special sauce" },
+      { "name": "Spicy chicken", "price": 350, "description": "Fried chicken with a spicy kick" },
+      { "name": "Hot dog", "price": 350, "description": "Grilled sausage in a soft bun with mustard" }
+    ]
+  },
+  {
+    "category": "Appetizers",
+    "items": [
+      { "name": "Fruit Salad", "price": 100, "description": "Fresh seasonal fruits mix" },
+      { "name": "Cocktails", "price": 200, "description": "Refreshing mixed drinks" },
+      { "name": "Nuggets", "price": 300, "description": "Crispy golden chicken nuggets" },
+      { "name": "Sandwich", "price": 100, "description": "Light snack sandwich" },
+      { "name": "French Fries", "price": 250, "description": "Crispy salted potato fries" }
+    ]
+  },
+  {
+    "category": "Beverages",
+    "items": [
+      { "name": "Milk Shake", "price": 50, "description": "Creamy vanilla or chocolate shake" },
+      { "name": "Iced Tea", "price": 60, "description": "Chilled lemon infused tea" },
+      { "name": "Orange Juice", "price": 70, "description": "Freshly squeezed orange juice" },
+      { "name": "Lemon Tea", "price": 20, "description": "Hot tea with a twist of lemon" },
+      { "name": "Coffee", "price": 90, "description": "Hot brewed coffee" }
+    ]
+  }
 ]
