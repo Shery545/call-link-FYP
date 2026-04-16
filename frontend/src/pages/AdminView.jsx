@@ -4,6 +4,7 @@ import { DollarSign, ShoppingCart, TrendingUp, Lock } from 'lucide-react';
 
 const AdminView = () => {
   const [orders, setOrders] = useState([]);
+  const [calls, setCalls] = useState([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
@@ -13,6 +14,10 @@ const AdminView = () => {
       fetch('http://localhost:8000/orders')
         .then(res => res.json())
         .then(data => setOrders(data));
+
+      fetch('http://localhost:8000/calls')
+        .then(res => res.json())
+        .then(data => setCalls(data));
     }
   }, [isAuthenticated]);
 
@@ -37,10 +42,10 @@ const AdminView = () => {
           </div>
           <h2 className="text-2xl font-bold mb-2 text-gray-800">Manager Access</h2>
           <p className="text-gray-500 mb-6 text-sm">Please enter your security PIN to view revenue data.</p>
-          
+
           <form onSubmit={handleLogin}>
-            <input 
-              type="password" 
+            <input
+              type="password"
               className="w-full p-3 border-2 border-gray-200 rounded-lg mb-4 text-center text-2xl tracking-[0.5em] font-bold focus:border-orange-500 focus:outline-none transition-colors"
               placeholder="••••"
               maxLength={4}
@@ -48,10 +53,10 @@ const AdminView = () => {
               onChange={(e) => setPin(e.target.value)}
               autoFocus
             />
-            
+
             {error && <p className="text-red-500 text-sm mb-4 font-medium">{error}</p>}
-            
-            <button 
+
+            <button
               type="submit"
               className="w-full bg-orange-600 text-white p-3 rounded-lg font-bold hover:bg-orange-700 transition-colors shadow-lg shadow-orange-200"
             >
@@ -66,7 +71,7 @@ const AdminView = () => {
   // --- DASHBOARD (Shown only after login) ---
   const totalRevenue = orders.reduce((sum, order) => sum + (order.price), 0);
   const totalOrders = orders.length;
-  
+
   // 1. Bar Chart Data (Revenue by Item)
   const itemRevenue = {};
   orders.forEach(o => { itemRevenue[o.item] = (itemRevenue[o.item] || 0) + o.price; });
@@ -91,7 +96,7 @@ const AdminView = () => {
     <div className="min-h-screen bg-gray-100 p-8 pb-24"> {/* Added padding bottom for nav */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-gray-800">📊 Manager Dashboard</h1>
-        <button 
+        <button
           onClick={() => setIsAuthenticated(false)}
           className="text-sm text-red-600 hover:text-red-800 font-medium bg-red-50 px-4 py-2 rounded-lg"
         >
@@ -136,7 +141,7 @@ const AdminView = () => {
 
       {/* Chart Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
+
         {/* Bar Chart */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[350px]">
           <h3 className="text-lg font-semibold mb-4 text-gray-800">Revenue by Item</h3>
@@ -161,7 +166,7 @@ const AdminView = () => {
                 ))}
               </Pie>
               <Tooltip />
-              <Legend verticalAlign="bottom" height={36}/>
+              <Legend verticalAlign="bottom" height={36} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -181,7 +186,40 @@ const AdminView = () => {
         </div>
 
       </div>
+
+      {/* Call Logs Section */ }
+  <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+    <h3 className="text-lg font-semibold mb-6 text-gray-800">Phone Call Logs</h3>
+    <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse">
+        <thead>
+          <tr className="border-b border-gray-200">
+            <th className="py-4 px-6 text-sm font-semibold text-gray-500 uppercase tracking-widest bg-gray-50 rounded-tl-lg">ID</th>
+            <th className="py-4 px-6 text-sm font-semibold text-gray-500 uppercase tracking-widest bg-gray-50">Caller Phone</th>
+            <th className="py-4 px-6 text-sm font-semibold text-gray-500 uppercase tracking-widest bg-gray-50">Time Connected</th>
+            <th className="py-4 px-6 text-sm font-semibold text-gray-500 uppercase tracking-widest bg-gray-50 rounded-tr-lg">Twilio SID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {calls.length === 0 ? (
+            <tr>
+              <td colSpan="4" className="py-8 text-center text-gray-400">No calls registered yet.</td>
+            </tr>
+          ) : (
+            calls.map((c, idx) => (
+              <tr key={c.id} className={`hover:bg-gray-50 transition-colors ${idx !== calls.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                <td className="py-4 px-6 text-sm font-medium text-gray-900">#{c.id}</td>
+                <td className="py-4 px-6 text-sm font-bold text-indigo-600">{c.caller_phone_number}</td>
+                <td className="py-4 px-6 text-sm text-gray-500">{new Date(c.start_time).toLocaleString()}</td>
+                <td className="py-4 px-6 text-xs text-gray-400 font-mono tracking-tighter">{c.call_sid}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
+  </div>
+    </div >
   );
 };
 

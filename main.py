@@ -5,11 +5,13 @@ import asyncio
 import websockets
 import logging
 import sys
+import re
 from fastapi import WebSocket, FastAPI, Depends, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
-from database import init_db, get_db, Order
+from database import init_db, get_db, Order, CallLog
+import aiohttp
 
 # --- CONFIGURATION ---
 load_dotenv()
@@ -33,7 +35,7 @@ WS_URL = f"wss://{HOST}/ws/google.ai.generativelanguage.v1beta.GenerativeService
 @app.on_event("startup")
 def on_startup():
     init_db()
-# //gfgf
+
 def save_order(item: str, quantity: int, price: float, customer_name: str, address: str):
     try:
         db = next(get_db())
@@ -45,23 +47,40 @@ def save_order(item: str, quantity: int, price: float, customer_name: str, addre
     except Exception as e:
         logger.error(f"❌ DB ERROR: {e}")
 
-TOOL_DEFINITIONS = [{
-    "function_declarations": [{
-        "name": "place_order",
-        "description": "Save order to database",
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
+async def extract_order_via_llm(text_buffer: str) -> dict:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
+    payload = {
+        "contents": [{
+            "parts": [{"text": f"Extract the customer order details from the following complete context. If a piece of information is completely missing, do NOT hallucinate placeholders. Use the exact word 'Unknown' for text, and 0 for numbers. Text: {text_buffer}"}]
+        }],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": {
+              "type": "OBJECT",
+              "properties": {
                 "item": {"type": "STRING"},
-                "quantity": {"type": "STRING"},
-                "price": {"type": "STRING"},
+                "quantity": {"type": "INTEGER"},
+                "price": {"type": "NUMBER"},
                 "name": {"type": "STRING"},
                 "address": {"type": "STRING"}
-            },
-            "required": ["item", "quantity", "price" ,"name", "address"]
+              },
+              "required": ["item", "quantity", "price", "name", "address"]
+            }
         }
-    }]
-}]
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    text_resp = data["candidates"][0]["content"]["parts"][0]["text"]
+                    return json.loads(text_resp)
+        return None
+    except Exception as e:
+        logger.error(f"Secondary LLM Extraction Failed: {e}")
+        return None
+
+TOOL_DEFINITIONS = []
 
 class GeminiChatbot:
     def __init__(self):
@@ -71,13 +90,12 @@ class GeminiChatbot:
     async def run(self, websocket: WebSocket):
         self.client_ws = websocket
         
-        # --- ROBUST MENU LOADING (Context Injection) ---
+        # --- ROBUST MENU LOADING ---
         menu_text = "Menu not available."
         try:
             if os.path.exists("menu.json"):
                 with open("menu.json", "r") as f:
                     menu_data = json.load(f)
-                    # Convert JSON to a clean string format for the AI
                     menu_text = json.dumps(menu_data, indent=2)
             else:
                 logger.warning("⚠️ menu.json file missing! AI will not know prices.")
@@ -85,7 +103,7 @@ class GeminiChatbot:
             logger.error(f"❌ Error reading menu: {e}")
 
         try:
-            # 1. Connect to Gemini with Keep-Alive (Ping every 20s)
+            # 1. Connect to Gemini with Keep-Alive
             async with websockets.connect(
                 WS_URL, 
                 additional_headers={"Content-Type": "application/json"},
@@ -96,11 +114,10 @@ class GeminiChatbot:
                 self.ws = gemini_ws
                 logger.info("✅ Connected to Gemini")
 
-                # 2. Send Setup (With Strict Prompt & Menu)
+                # 2. Send Setup
                 await gemini_ws.send(json.dumps({
                     "setup": {
                         "model": MODEL_ID,
-                        "tools": TOOL_DEFINITIONS,
                         "generationConfig": {
                             "responseModalities": ["AUDIO"],
                             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "Charon"}}}
@@ -120,86 +137,42 @@ class GeminiChatbot:
                             3. If an item is not in the list, politely say it is unavailable.
                             4. Answer questions about ingredients or price.
                             
-                            **CRITICAL ORDERING RULES:**
+                            **CRITICAL ORDERING RULES (INTERNAL TEXT LOGGING):**
                             5. IMPORTANT: Before confirming the order, YOU MUST ASK FOR THE CUSTOMER'S NAME AND DELIVERY ADDRESS.
-                            6. Once you have the Item, Quantity, the Customer's Name, and the Address, call the 'place_order' tool.
-                            7. Do not call the tool until you confidently have both the customer's name and their full address.
+                            6. Once you have EVERYTHING (Item, Quantity, Price, Name, Address), you MUST ACTUALLY WRITE the exact JSON string in your internal thought/text buffer. DO NOT just say "I will generate it". You must manually type the JSON out like this:
+                            [NEW_ORDER]: {{"item": "<item>", "quantity": <number>, "price": <number>, "name": "<name>", "address": "<address>"}}
+                            7. Do not output this secret phrase until the order is completely finalized.
+                            8. The JSON must be valid, strict, and on a single line immediately following [NEW_ORDER]:
                             """}]
                         }
                     }
                 }))
 
-                # 3. Define Tasks
-                is_tool_call_pending = False
-
                 async def browser_to_gemini():
-                    nonlocal is_tool_call_pending
                     try:
                         async for message in self.client_ws.iter_text():
                             data = json.loads(message)
                             if data.get("type") == "audio":
-                                # Block sending audio if Gemini is waiting for a tool response
-                                if not is_tool_call_pending:
-                                    await self.ws.send(json.dumps({
-                                        "realtimeInput": {"mediaChunks": [{"mimeType": "audio/pcm", "data": data["audio"]}]}
-                                    }))
+                                await self.ws.send(json.dumps({
+                                    "realtimeInput": {"mediaChunks": [{"mimeType": "audio/pcm", "data": data["audio"]}]}
+                                }))
+                            elif data.get("type") == "text":
+                                await self.ws.send(json.dumps({
+                                    "clientContent": {
+                                        "turns": [{"role": "user", "parts": [{"text": data["text"]}]}],
+                                        "turnComplete": True
+                                    }
+                                }))
                     except Exception as e:
                         logger.warning(f"Browser Disconnected: {e}")
-                        raise # Force the other loop to close
+                        raise 
 
                 async def gemini_to_browser():
-                    nonlocal is_tool_call_pending
+                    assistant_text_buffer = ""
+                    full_conversation_history = ""
                     try:
                         async for msg in self.ws:
                             response = json.loads(msg)
-                            
-                            if "toolCall" in response:
-                                is_tool_call_pending = True
-                                try:
-                                    function_responses = []
-                                    for fc in response["toolCall"]["functionCalls"]:
-                                        if fc["name"] == "place_order":
-                                            args = fc.get("args", {})
-                                            
-                                            try:
-                                                qty = int(args.get("quantity", 1))
-                                            except:
-                                                qty = 1
-                                                
-                                            try:
-                                                pr = float(args.get("price", 0.0))
-                                            except:
-                                                pr = 0.0
-                                                
-                                            save_order(
-                                                args.get("item", "Unknown"), 
-                                                qty, 
-                                                pr, 
-                                                args.get("name", "Unknown"),
-                                                args.get("address", "Unknown")
-                                            )
-                                            function_responses.append({
-                                                "name": fc["name"],
-                                                "id": fc["id"],
-                                                "response": {}
-                                            })
-                                        else:
-                                            # Graceful fallback for hallucinated tools
-                                            function_responses.append({
-                                                "name": fc["name"],
-                                                "id": fc["id"],
-                                                "response": {}
-                                            })
-                                            
-                                    # Send ONE single toolResponse message containing ALL replies
-                                    if function_responses:
-                                        await self.ws.send(json.dumps({
-                                            "toolResponse": {
-                                                "functionResponses": function_responses
-                                            }
-                                        }))
-                                finally:
-                                    is_tool_call_pending = False
 
                             if "serverContent" in response:
                                 parts = response["serverContent"].get("modelTurn", {}).get("parts", [])
@@ -209,17 +182,45 @@ class GeminiChatbot:
                                             "type": "audio",
                                             "data": part["inlineData"]["data"]
                                         })
+                                    if "text" in part:
+                                        assistant_text_buffer += part["text"]
+                                        full_conversation_history += part["text"] + "\n"
+                                        
+                                if response["serverContent"].get("turnComplete"):
+                                    logger.info(f"AI Text Reply: {assistant_text_buffer}")
+                                    
+                                    if "address" in assistant_text_buffer.lower() and ("ready" in assistant_text_buffer.lower() or "confirm" in assistant_text_buffer.lower() or "finaliz" in assistant_text_buffer.lower()):
+                                        try:
+                                            order_data = await extract_order_via_llm(full_conversation_history)
+                                            if order_data and "item" in order_data and order_data["item"] != "Unknown" and order_data.get("address"):
+                                                qty = int(order_data.get("quantity", 1))
+                                                pr = float(order_data.get("price", 0.0))
+                                                save_order(
+                                                    order_data.get("item"), 
+                                                    qty, 
+                                                    pr, 
+                                                    order_data.get("name", "Unknown"),
+                                                    order_data.get("address", "Unknown")
+                                                )
+                                                logger.info("✅ Extracted order via Secondary LLM Trick!")
+                                                try:
+                                                    await self.client_ws.send_json({"toolResponse": "Order placed successfully!", "type": "tool"})
+                                                except Exception:
+                                                    pass
+                                        except Exception as e:
+                                            logger.error(f"Failed to parse order JSON from text: {e}")
+                                            
+                                    assistant_text_buffer = ""
                     except Exception as e:
                         logger.error(f"Gemini Disconnected: {e}")
-                        raise # Force the other loop to close
+                        raise 
 
-                # 4. Run Both. If ONE fails, STOP the other immediately.
+                # 4. Run Both
                 done, pending = await asyncio.wait(
                     [asyncio.create_task(browser_to_gemini()), asyncio.create_task(gemini_to_browser())],
                     return_when=asyncio.FIRST_COMPLETED
                 )
                 
-                # Cancel whatever is left running
                 for task in pending:
                     task.cancel()
 
@@ -236,6 +237,10 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/orders")
 def get_orders(db: Session = Depends(get_db)):
     return db.query(Order).order_by(Order.created_at.desc()).all()
+
+@app.get("/calls")
+def get_calls(db: Session = Depends(get_db)):
+    return db.query(CallLog).order_by(CallLog.start_time.desc()).all()
 
 @app.put("/orders/{order_id}/complete")
 def complete_order(order_id: int, db: Session = Depends(get_db)):

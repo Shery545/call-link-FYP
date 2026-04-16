@@ -114,6 +114,22 @@ async def twilio_voice(request: Request):
     Receives incoming webhook from Twilio when a call is dialed.
     Returns TwiML that establishes a WebSocket media stream.
     """
+    # 1. Parse caller information
+    form_data = await request.form()
+    caller_phone = form_data.get("From", "Unknown")
+    call_sid = form_data.get("CallSid", "Unknown")
+    
+    try:
+        from database import get_db, CallLog
+        db = next(get_db())
+        new_call = CallLog(call_sid=call_sid, caller_phone_number=caller_phone)
+        db.add(new_call)
+        db.commit()
+        db.close()
+        logger.info(f"📞 Logged Incoming Call: {caller_phone} (SID: {call_sid})")
+    except Exception as e:
+        logger.error(f"❌ Failed to log call: {e}")
+
     host = request.headers.get("host", request.url.netloc)
     
     # Infer if we're behind a secure proxy (like ngrok) or native HTTPS

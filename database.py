@@ -22,6 +22,15 @@ class Order(Base):
     address = Column(String, default="Unknown")
     created_at = Column(DateTime, default=datetime.now)
 
+class CallLog(Base):
+    __tablename__ = "call_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    call_sid = Column(String, index=True, unique=True, default="WEB_CALL")
+    caller_phone_number = Column(String, default="Unknown")
+    start_time = Column(DateTime, default=datetime.now)
+    status = Column(String, default="connected")
+
 # 3. Create Tables
 def init_db():
     Base.metadata.create_all(bind=engine)

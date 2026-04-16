@@ -8,6 +8,7 @@ const KitchenView = () => {
     try {
       const res = await fetch('http://localhost:8000/orders');
       const data = await res.json();
+      
       setOrders(data);
     } catch (err) {
       console.error("Failed to fetch orders", err);
