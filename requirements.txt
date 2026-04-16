@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+websockets
+python-dotenv
+sqlalchemy
+loguru
+pydantic
+twilio

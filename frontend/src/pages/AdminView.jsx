@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend } from 'recharts';
 import { DollarSign, ShoppingCart, TrendingUp, Lock } from 'lucide-react';
 
 const AdminView = () => {
@@ -67,9 +67,24 @@ const AdminView = () => {
   const totalRevenue = orders.reduce((sum, order) => sum + (order.price), 0);
   const totalOrders = orders.length;
   
-  const chartData = orders.map(order => ({
-    name: order.item,
-    price: order.price
+  // 1. Bar Chart Data (Revenue by Item)
+  const itemRevenue = {};
+  orders.forEach(o => { itemRevenue[o.item] = (itemRevenue[o.item] || 0) + o.price; });
+  const barData = Object.keys(itemRevenue).map(key => ({ name: key, revenue: itemRevenue[key] }));
+
+  // 2. Pie Chart Data (Order Status)
+  const statusCounts = { pending: 0, completed: 0 };
+  orders.forEach(o => { if (statusCounts[o.status] !== undefined) statusCounts[o.status]++; });
+  const pieData = [
+    { name: 'Pending', value: statusCounts.pending },
+    { name: 'Completed', value: statusCounts.completed }
+  ];
+  const PIE_COLORS = ['#f97316', '#22c55e'];
+
+  // 3. Line Chart Data (Timeline reverse chronologically)
+  const lineData = [...orders].reverse().map(o => ({
+    time: new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    price: o.price
   }));
 
   return (
@@ -92,7 +107,7 @@ const AdminView = () => {
           </div>
           <div>
             <p className="text-gray-500 text-sm font-medium">Total Revenue</p>
-            <h2 className="text-3xl font-bold text-gray-800">₹{totalRevenue.toFixed(0)}</h2>
+            <h2 className="text-3xl font-bold text-gray-800">Rs. {totalRevenue.toFixed(0)}</h2>
           </div>
         </div>
 
@@ -113,26 +128,58 @@ const AdminView = () => {
           <div>
             <p className="text-gray-500 text-sm font-medium">Avg Order Value</p>
             <h2 className="text-3xl font-bold text-gray-800">
-              ₹{totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(0) : "0"}
+              Rs. {totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(0) : "0"}
             </h2>
           </div>
         </div>
       </div>
 
       {/* Chart Section */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[400px]">
-        <h3 className="text-xl font-semibold mb-6 text-gray-800">Real-time Sales Trend</h3>
-        <ResponsiveContainer width="100%" height="85%">
-          <BarChart data={chartData}>
-            <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
-            <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₹${value}`} />
-            <Tooltip 
-              contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-              cursor={{ fill: '#f3f4f6' }}
-            />
-            <Bar dataKey="price" fill="#f97316" radius={[4, 4, 0, 0]} barSize={40} />
-          </BarChart>
-        </ResponsiveContainer>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        {/* Bar Chart */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[350px]">
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">Revenue by Item</h3>
+          <ResponsiveContainer width="100%" height="85%">
+            <BarChart data={barData}>
+              <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `Rs.${val}`} />
+              <Tooltip cursor={{ fill: '#f3f4f6' }} />
+              <Bar dataKey="revenue" fill="#f97316" radius={[4, 4, 0, 0]} barSize={40} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Pie Chart */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[350px]">
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">Order Status Distribution</h3>
+          <ResponsiveContainer width="100%" height="85%">
+            <PieChart>
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">
+                {pieData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend verticalAlign="bottom" height={36}/>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Line Chart */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[350px] lg:col-span-2">
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">Sales Timeline</h3>
+          <ResponsiveContainer width="100%" height="85%">
+            <LineChart data={lineData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+              <XAxis dataKey="time" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `Rs.${val}`} />
+              <Tooltip />
+              <Line type="monotone" dataKey="price" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
       </div>
     </div>
   );

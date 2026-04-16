@@ -17,8 +17,9 @@ class Order(Base):
     item = Column(String, index=True)
     quantity = Column(Integer)
     price = Column(Float)
-    status = Column(String, default="pending")  # pending, ready
+    status = Column(String, default="pending")  # pending, ready, completed
     customer_name = Column(String, default="Guest")
+    address = Column(String, default="Unknown")
     created_at = Column(DateTime, default=datetime.now)
 
 # 3. Create Tables
