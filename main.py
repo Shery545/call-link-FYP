@@ -48,6 +48,26 @@ def save_order(item: str, quantity: int, price: float, customer_name: str, addre
         logger.error(f"❌ DB ERROR: {e}")
 
 async def extract_order_via_llm(text_buffer: str) -> dict:
+    # 1. Primary Method: Robust Regex Extraction
+    try:
+        pattern = re.compile(r"\{[^{}]*\"item\"[^{}]*\"address\"[^{}]*\}", re.IGNORECASE | re.DOTALL)
+        matches = pattern.finditer(text_buffer)
+        last_valid = None
+        for match in matches:
+            try:
+                parsed = json.loads(match.group(0))
+                if "item" in parsed and "address" in parsed:
+                    last_valid = parsed
+            except Exception:
+                pass
+        
+        if last_valid:
+            logger.info("✅ Extracted order via Regex successfully!")
+            return last_valid
+    except Exception as e:
+        logger.error(f"Regex extraction failed: {e}")
+
+    # 2. Fallback Method: Secondary LLM Extraction 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
     payload = {
         "contents": [{
@@ -74,7 +94,10 @@ async def extract_order_via_llm(text_buffer: str) -> dict:
                 if resp.status == 200:
                     data = await resp.json()
                     text_resp = data["candidates"][0]["content"]["parts"][0]["text"]
+                    logger.info("✅ Extracted order via Secondary LLM successfully!")
                     return json.loads(text_resp)
+                else:
+                    logger.error(f"Secondary LLM non-200 response: {resp.status} - {await resp.text()}")
         return None
     except Exception as e:
         logger.error(f"Secondary LLM Extraction Failed: {e}")
@@ -86,6 +109,7 @@ class GeminiChatbot:
     def __init__(self):
         self.ws = None      
         self.client_ws = None 
+        self.order_placed = False 
 
     async def run(self, websocket: WebSocket):
         self.client_ws = websocket
@@ -154,7 +178,7 @@ class GeminiChatbot:
                             data = json.loads(message)
                             if data.get("type") == "audio":
                                 await self.ws.send(json.dumps({
-                                    "realtimeInput": {"mediaChunks": [{"mimeType": "audio/pcm", "data": data["audio"]}]}
+                                    "realtimeInput": {"mediaChunks": [{"mimeType": "audio/pcm;rate=24000", "data": data["audio"]}]}
                                 }))
                             elif data.get("type") == "text":
                                 await self.ws.send(json.dumps({
@@ -189,26 +213,41 @@ class GeminiChatbot:
                                 if response["serverContent"].get("turnComplete"):
                                     logger.info(f"AI Text Reply: {assistant_text_buffer}")
                                     
-                                    if "address" in assistant_text_buffer.lower() and ("ready" in assistant_text_buffer.lower() or "confirm" in assistant_text_buffer.lower() or "finaliz" in assistant_text_buffer.lower()):
-                                        try:
-                                            order_data = await extract_order_via_llm(full_conversation_history)
-                                            if order_data and "item" in order_data and order_data["item"] != "Unknown" and order_data.get("address"):
+                                    if not self.order_placed:
+                                        # Try to extract the JSON block directly from this turn's response
+                                        json_pattern = re.compile(r"\{[^{}]*\"item\"[^{}]*\"address\"[^{}]*\}", re.IGNORECASE | re.DOTALL)
+                                        json_match = json_pattern.search(assistant_text_buffer)
+                                        
+                                        order_data = None
+                                        if json_match:
+                                            try:
+                                                order_data = json.loads(json_match.group(0))
+                                            except:
+                                                pass
+                                        
+                                        # If no direct JSON in this turn, check if AI is currently confirming using heuristics
+                                        if not order_data and ("address" in assistant_text_buffer.lower() and ("ready" in assistant_text_buffer.lower() or "confirm" in assistant_text_buffer.lower() or "finaliz" in assistant_text_buffer.lower())):
+                                            try:
+                                                order_data = await extract_order_via_llm(full_conversation_history)
+                                            except Exception as e:
+                                                logger.error(f"Failed to extract order JSON via LLM: {e}")
+                                                
+                                        # Validate and save if we successfully extracted order data
+                                        if order_data and "item" in order_data and order_data["item"] != "Unknown":
+                                            name = str(order_data.get("name", "Unknown")).strip()
+                                            address = str(order_data.get("address", "Unknown")).strip()
+                                            
+                                            # STRICT VALIDATION: Only save if Name and Address are fully provided
+                                            if name.lower() != "unknown" and address.lower() != "unknown" and len(name) > 1 and len(address) > 1:
                                                 qty = int(order_data.get("quantity", 1))
                                                 pr = float(order_data.get("price", 0.0))
-                                                save_order(
-                                                    order_data.get("item"), 
-                                                    qty, 
-                                                    pr, 
-                                                    order_data.get("name", "Unknown"),
-                                                    order_data.get("address", "Unknown")
-                                                )
-                                                logger.info("✅ Extracted order via Secondary LLM Trick!")
+                                                save_order(order_data.get("item"), qty, pr, name, address)
+                                                self.order_placed = True
+                                                logger.info("✅ Order successfully validated and placed!")
                                                 try:
                                                     await self.client_ws.send_json({"toolResponse": "Order placed successfully!", "type": "tool"})
-                                                except Exception:
+                                                except:
                                                     pass
-                                        except Exception as e:
-                                            logger.error(f"Failed to parse order JSON from text: {e}")
                                             
                                     assistant_text_buffer = ""
                     except Exception as e:
