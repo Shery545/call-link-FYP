@@ -54,6 +54,8 @@ class TwilioWebSocketAdapter:
     def __init__(self, twilio_ws: WebSocket):
         self.twilio_ws = twilio_ws
         self.stream_sid = None
+        self._in_ratecv_state = None   # State for inbound: 8kHz -> 16kHz
+        self._out_ratecv_state = None  # State for outbound: 24kHz -> 8kHz
 
     async def accept(self):
         # Already accepted in twilio_stream endpoint
@@ -77,9 +79,15 @@ class TwilioWebSocketAdapter:
             elif event == "media":
                 twilio_b64 = data["media"]["payload"]
                 try:
-                    # Convert to PCM16
-                    pcm_b64 = mulaw_to_pcm16(twilio_b64)
-                    
+                    # 1. Decode base64 µ-law audio from Twilio
+                    audio_data = base64.b64decode(twilio_b64)
+                    # 2. µ-law -> 16-bit PCM (still 8kHz)
+                    pcm_data = audioop.ulaw2lin(audio_data, 2)
+                    # 3. Stateful resample 8kHz -> 16kHz (CRITICAL: maintain state across chunks)
+                    resampled, self._in_ratecv_state = audioop.ratecv(
+                        pcm_data, 2, 1, 8000, 16000, self._in_ratecv_state
+                    )
+                    pcm_b64 = base64.b64encode(resampled).decode("utf-8")
                     # GeminiChatbot expects: {"type": "audio", "audio": "base64..."}
                     yield json.dumps({"type": "audio", "audio": pcm_b64})
                 except Exception as e:
@@ -94,9 +102,16 @@ class TwilioWebSocketAdapter:
             pcm_b64 = data.get("data")
             if pcm_b64:
                 try:
-                    # Convert PCM back to ulaw
-                    twilio_b64 = pcm16_to_mulaw(pcm_b64)
-                    
+                    # 1. Decode Gemini's 24kHz PCM
+                    pcm_data = base64.b64decode(pcm_b64)
+                    # 2. Stateful resample 24kHz -> 8kHz (CRITICAL: maintain state across chunks)
+                    resampled, self._out_ratecv_state = audioop.ratecv(
+                        pcm_data, 2, 1, 24000, 8000, self._out_ratecv_state
+                    )
+                    # 3. 16-bit PCM -> µ-law
+                    ulaw_data = audioop.lin2ulaw(resampled, 2)
+                    twilio_b64 = base64.b64encode(ulaw_data).decode("utf-8")
+
                     # Twilio requires this JSON structure
                     msg = {
                         "event": "media",

@@ -161,12 +161,15 @@ class GeminiChatbot:
                             3. If an item is not in the list, politely say it is unavailable.
                             4. Answer questions about ingredients or price.
                             
-                            **CRITICAL ORDERING RULES (INTERNAL TEXT LOGGING):**
+                            **CRITICAL ORDERING RULES:**
                             5. IMPORTANT: Before confirming the order, YOU MUST ASK FOR THE CUSTOMER'S NAME AND DELIVERY ADDRESS.
-                            6. Once you have EVERYTHING (Item, Quantity, Price, Name, Address), you MUST ACTUALLY WRITE the exact JSON string in your internal thought/text buffer. DO NOT just say "I will generate it". You must manually type the JSON out like this:
-                            [NEW_ORDER]: {{"item": "<item>", "quantity": <number>, "price": <number>, "name": "<name>", "address": "<address>"}}
-                            7. Do not output this secret phrase until the order is completely finalized.
-                            8. The JSON must be valid, strict, and on a single line immediately following [NEW_ORDER]:
+                            6. Once you have the customer's name and address, you MUST verbally confirm the full order back to the customer word for word. Say exactly:
+                               "Theek hai! Order confirm ho gaya. [CUSTOMER NAME], aapka [QUANTITY]x [ITEM] Rs.[PRICE] ka, deliver hoga [ADDRESS] pe."
+                               Replace the brackets with the actual values from the conversation.
+                            7. After saying this confirmation out loud, you MUST write the following JSON in your internal text output on a single line:
+                               [NEW_ORDER]: {{"item": "<item>", "quantity": <number>, "price": <number>, "name": "<customer name>", "address": "<delivery address>"}}
+                            8. The JSON values must be the REAL values from the conversation — never use placeholders like <item> or Unknown.
+                            9. Only output [NEW_ORDER] once, after the order is 100% confirmed with name and address.
                             """}]
                         }
                     }
@@ -178,7 +181,7 @@ class GeminiChatbot:
                             data = json.loads(message)
                             if data.get("type") == "audio":
                                 await self.ws.send(json.dumps({
-                                    "realtimeInput": {"mediaChunks": [{"mimeType": "audio/pcm;rate=24000", "data": data["audio"]}]}
+                                    "realtimeInput": {"mediaChunks": [{"mimeType": "audio/pcm;rate=16000", "data": data["audio"]}]}
                                 }))
                             elif data.get("type") == "text":
                                 await self.ws.send(json.dumps({
@@ -214,21 +217,34 @@ class GeminiChatbot:
                                     logger.info(f"AI Text Reply: {assistant_text_buffer}")
                                     
                                     if not self.order_placed:
-                                        # Try to extract the JSON block directly from this turn's response
-                                        json_pattern = re.compile(r"\{[^{}]*\"item\"[^{}]*\"address\"[^{}]*\}", re.IGNORECASE | re.DOTALL)
-                                        json_match = json_pattern.search(assistant_text_buffer)
-                                        
                                         order_data = None
-                                        if json_match:
-                                            try:
-                                                order_data = json.loads(json_match.group(0))
-                                            except:
-                                                pass
                                         
-                                        # If no direct JSON in this turn, check if AI is currently confirming using heuristics
-                                        if not order_data and ("address" in assistant_text_buffer.lower() and ("ready" in assistant_text_buffer.lower() or "confirm" in assistant_text_buffer.lower() or "finaliz" in assistant_text_buffer.lower())):
+                                        # Method 1: Look for explicit [NEW_ORDER]: {"..."} marker (most reliable)
+                                        new_order_pattern = re.compile(r"\[NEW_ORDER\]:\s*(\{[^{}]*\})", re.IGNORECASE | re.DOTALL)
+                                        new_order_match = new_order_pattern.search(assistant_text_buffer)
+                                        if new_order_match:
+                                            try:
+                                                order_data = json.loads(new_order_match.group(1))
+                                                logger.info(f"✅ Extracted order via [NEW_ORDER] marker: {order_data}")
+                                            except Exception as e:
+                                                logger.error(f"Failed to parse [NEW_ORDER] JSON: {e}")
+                                        
+                                        # Method 2: Generic JSON with item+address in the buffer
+                                        if not order_data:
+                                            json_pattern = re.compile(r"\{[^{}]*\"item\"[^{}]*\"address\"[^{}]*\}", re.IGNORECASE | re.DOTALL)
+                                            json_match = json_pattern.search(assistant_text_buffer)
+                                            if json_match:
+                                                try:
+                                                    order_data = json.loads(json_match.group(0))
+                                                    logger.info(f"✅ Extracted order via generic regex: {order_data}")
+                                                except:
+                                                    pass
+                                        
+                                        # Method 3: LLM fallback — triggered when AI seems to be confirming order
+                                        if not order_data and ("address" in assistant_text_buffer.lower() and ("confirm" in assistant_text_buffer.lower() or "finaliz" in assistant_text_buffer.lower() or "deliver" in assistant_text_buffer.lower() or "theek hai" in assistant_text_buffer.lower())):
                                             try:
                                                 order_data = await extract_order_via_llm(full_conversation_history)
+                                                logger.info(f"LLM extraction result: {order_data}")
                                             except Exception as e:
                                                 logger.error(f"Failed to extract order JSON via LLM: {e}")
                                                 

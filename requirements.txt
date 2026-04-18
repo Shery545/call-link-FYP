@@ -6,3 +6,4 @@ sqlalchemy
 loguru
 pydantic
 twilio
+python-multipart
