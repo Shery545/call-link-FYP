@@ -8,3 +8,4 @@ pydantic
 twilio
 python-multipart
 aiohttp
+audioop-lts
