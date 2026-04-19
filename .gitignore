@@ -7,14 +7,11 @@ __pycache__/
 # Environment — NEVER commit secrets
 .env
 
-# Database (ephemeral on Railway, don't commit)
+# Database (ephemeral on Railway)
 orders.db
 
 # Node
 node_modules/
-
-# Frontend build output
-frontend/dist/
 frontend/node_modules/
 
 # OS
