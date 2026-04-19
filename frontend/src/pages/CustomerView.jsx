@@ -52,8 +52,9 @@ const CustomerView = () => {
   const startConnection = async () => {
     setStatus("Connecting...");
     
-    // Connect to Python Backend
-    websocketRef.current = new WebSocket("ws://localhost:8000/ws");
+    // Connect to Python Backend (works both locally and on Railway)
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    websocketRef.current = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
 
     websocketRef.current.onopen = () => {
       setStatus("Listening... Speak now!");

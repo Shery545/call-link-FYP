@@ -11,11 +11,11 @@ const AdminView = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetch('http://localhost:8000/orders')
+      fetch('/orders')
         .then(res => res.json())
         .then(data => setOrders(data));
 
-      fetch('http://localhost:8000/calls')
+      fetch('/calls')
         .then(res => res.json())
         .then(data => setCalls(data));
     }

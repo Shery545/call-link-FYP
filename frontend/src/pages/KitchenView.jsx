@@ -6,7 +6,7 @@ const KitchenView = () => {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch('http://localhost:8000/orders');
+      const res = await fetch('/orders');
       const data = await res.json();
       
       setOrders(data);
@@ -17,7 +17,7 @@ const KitchenView = () => {
 
   const handleComplete = async (orderId) => {
     try {
-      const res = await fetch(`http://localhost:8000/orders/${orderId}/complete`, { method: 'PUT' });
+      const res = await fetch(`/orders/${orderId}/complete`, { method: 'PUT' });
       if (res.ok) fetchOrders();
     } catch (err) {
       console.error("Failed to complete order", err);

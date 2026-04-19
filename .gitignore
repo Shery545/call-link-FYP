@@ -1,0 +1,22 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment — NEVER commit secrets
+.env
+
+# Database (ephemeral on Railway, don't commit)
+orders.db
+
+# Node
+node_modules/
+
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

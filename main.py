@@ -310,6 +310,13 @@ def complete_order(order_id: int, db: Session = Depends(get_db)):
 from twilio_stream import twilio_router
 app.include_router(twilio_router)
 
+# Serve built React frontend (must be LAST — after all API routes)
+import os
+from fastapi.staticfiles import StaticFiles
+frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+if os.path.exists(frontend_dist):
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
