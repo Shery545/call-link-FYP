@@ -241,7 +241,21 @@ class GeminiChatbot:
                                                     pass
                                         
                                         # Method 3: LLM fallback — triggered when AI seems to be confirming order
-                                        if not order_data and ("address" in assistant_text_buffer.lower() and ("confirm" in assistant_text_buffer.lower() or "finaliz" in assistant_text_buffer.lower() or "deliver" in assistant_text_buffer.lower() or "theek hai" in assistant_text_buffer.lower())):
+                                        # Uses ANY confirmation signal (removed strict "address" requirement — AI often says
+                                        # "delivered to X" instead of "address: X", which previously blocked this trigger)
+                                        _buf = assistant_text_buffer.lower()
+                                        _confirmation_signals = [
+                                            "confirm" in _buf,
+                                            "finaliz" in _buf,
+                                            "deliver" in _buf,
+                                            "theek hai" in _buf,
+                                            "[new_order]" in _buf,           # AI mentions it's about to write the JSON
+                                            "all required details" in _buf,  # AI thinking text pattern
+                                            "order is now complete" in _buf,
+                                            "order confirm" in _buf,
+                                            "formulate the order" in _buf,
+                                        ]
+                                        if not order_data and any(_confirmation_signals):
                                             try:
                                                 order_data = await extract_order_via_llm(full_conversation_history)
                                                 logger.info(f"LLM extraction result: {order_data}")
