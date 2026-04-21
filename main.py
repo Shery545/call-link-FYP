@@ -68,7 +68,7 @@ async def extract_order_via_llm(text_buffer: str) -> dict:
         logger.error(f"Regex extraction failed: {e}")
 
     # 2. Fallback Method: Secondary LLM Extraction 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
     payload = {
         "contents": [{
             "parts": [{"text": f"Extract the customer order details from the following complete context. If a piece of information is completely missing, do NOT hallucinate placeholders. Use the exact word 'Unknown' for text, and 0 for numbers. Text: {text_buffer}"}]
@@ -245,15 +245,15 @@ class GeminiChatbot:
                                         # "delivered to X" instead of "address: X", which previously blocked this trigger)
                                         _buf = assistant_text_buffer.lower()
                                         _confirmation_signals = [
-                                            "confirm" in _buf,
-                                            "finaliz" in _buf,
-                                            "deliver" in _buf,
                                             "theek hai" in _buf,
-                                            "[new_order]" in _buf,           # AI mentions it's about to write the JSON
-                                            "all required details" in _buf,  # AI thinking text pattern
+                                            "[new_order]" in _buf,
                                             "order is now complete" in _buf,
                                             "order confirm" in _buf,
+                                            "order confirm ho gaya" in _buf,
+                                            "deliver hoga" in _buf,           # Final verbal confirmation phrase
                                             "formulate the order" in _buf,
+                                            "generating the new_order" in _buf,
+                                            "all required details" in _buf and ("name" in _buf and "address" in _buf),
                                         ]
                                         if not order_data and any(_confirmation_signals):
                                             try:
