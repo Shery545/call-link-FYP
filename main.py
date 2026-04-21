@@ -68,40 +68,44 @@ async def extract_order_via_llm(text_buffer: str) -> dict:
         logger.error(f"Regex extraction failed: {e}")
 
     # 2. Fallback Method: Secondary LLM Extraction 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GOOGLE_API_KEY}"
-    payload = {
-        "contents": [{
-            "parts": [{"text": f"Extract the customer order details from the following complete context. If a piece of information is completely missing, do NOT hallucinate placeholders. Use the exact word 'Unknown' for text, and 0 for numbers. Text: {text_buffer}"}]
-        }],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": {
-              "type": "OBJECT",
-              "properties": {
-                "item": {"type": "STRING"},
-                "quantity": {"type": "INTEGER"},
-                "price": {"type": "NUMBER"},
-                "name": {"type": "STRING"},
-                "address": {"type": "STRING"}
-              },
-              "required": ["item", "quantity", "price", "name", "address"]
+    # Try multiple models to avoid 404/503 issues
+    models_to_try = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
+    
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GOOGLE_API_KEY}"
+        payload = {
+            "contents": [{
+                "parts": [{"text": f"Extract the customer order details from the following complete context. If a piece of information is completely missing, do NOT hallucinate placeholders. Use the exact word 'Unknown' for text, and 0 for numbers. Text: {text_buffer}"}]
+            }],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseSchema": {
+                  "type": "OBJECT",
+                  "properties": {
+                    "item": {"type": "STRING"},
+                    "quantity": {"type": "INTEGER"},
+                    "price": {"type": "NUMBER"},
+                    "name": {"type": "STRING"},
+                    "address": {"type": "STRING"}
+                  },
+                  "required": ["item", "quantity", "price", "name", "address"]
+                }
             }
         }
-    }
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    text_resp = data["candidates"][0]["content"]["parts"][0]["text"]
-                    logger.info("✅ Extracted order via Secondary LLM successfully!")
-                    return json.loads(text_resp)
-                else:
-                    logger.error(f"Secondary LLM non-200 response: {resp.status} - {await resp.text()}")
-        return None
-    except Exception as e:
-        logger.error(f"Secondary LLM Extraction Failed: {e}")
-        return None
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        text_resp = data["candidates"][0]["content"]["parts"][0]["text"]
+                        logger.info(f"✅ Extracted order via Secondary LLM ({model}) successfully!")
+                        return json.loads(text_resp)
+                    else:
+                        logger.warning(f"Secondary LLM ({model}) failed with status {resp.status}. Trying next...")
+        except Exception as e:
+            logger.error(f"Secondary LLM ({model}) Extraction Failed: {e}")
+    
+    return None
 
 TOOL_DEFINITIONS = []
 
