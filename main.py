@@ -69,7 +69,7 @@ async def extract_order_via_llm(text_buffer: str) -> dict:
 
     # 2. Fallback Method: Secondary LLM Extraction 
     # Try multiple models to avoid 404/503 issues
-    models_to_try = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
+    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
     
     for model in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GOOGLE_API_KEY}"
