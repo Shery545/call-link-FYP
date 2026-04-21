@@ -60,6 +60,12 @@ const CustomerView = () => {
       setStatus("Listening... Speak now!");
       setIsListening(true);
       startMicrophone();
+      // Trigger Gemini to deliver its opening greeting immediately
+      setTimeout(() => {
+        if (websocketRef.current?.readyState === WebSocket.OPEN) {
+          websocketRef.current.send(JSON.stringify({ type: "text", text: "hello" }));
+        }
+      }, 500);
     };
 
     websocketRef.current.onmessage = async (event) => {
