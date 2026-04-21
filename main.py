@@ -67,7 +67,8 @@ async def extract_order_via_llm(text_buffer: str) -> dict:
     except Exception as e:
         logger.error(f"Regex extraction failed: {e}")
 
-    # 2. Fallback Method: Secondary LLM Extraction (with model fallback on 503)
+    # 2. Fallback Method: Secondary LLM Extraction 
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
     payload = {
         "contents": [{
             "parts": [{"text": f"Extract the customer order details from the following complete context. If a piece of information is completely missing, do NOT hallucinate placeholders. Use the exact word 'Unknown' for text, and 0 for numbers. Text: {text_buffer}"}]
@@ -87,24 +88,16 @@ async def extract_order_via_llm(text_buffer: str) -> dict:
             }
         }
     }
-    # Try primary model first, fall back to stable model on 503
-    llm_models = ["gemini-2.5-flash", "gemini-1.5-flash"]
     try:
         async with aiohttp.ClientSession() as session:
-            for model_name in llm_models:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GOOGLE_API_KEY}"
-                async with session.post(url, json=payload) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        text_resp = data["candidates"][0]["content"]["parts"][0]["text"]
-                        logger.info(f"✅ Extracted order via Secondary LLM ({model_name}) successfully!")
-                        return json.loads(text_resp)
-                    elif resp.status == 503:
-                        logger.warning(f"Secondary LLM {model_name} returned 503, trying fallback...")
-                        continue
-                    else:
-                        logger.error(f"Secondary LLM non-200 response ({model_name}): {resp.status} - {await resp.text()}")
-                        break
+            async with session.post(url, json=payload) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    text_resp = data["candidates"][0]["content"]["parts"][0]["text"]
+                    logger.info("✅ Extracted order via Secondary LLM successfully!")
+                    return json.loads(text_resp)
+                else:
+                    logger.error(f"Secondary LLM non-200 response: {resp.status} - {await resp.text()}")
         return None
     except Exception as e:
         logger.error(f"Secondary LLM Extraction Failed: {e}")
@@ -150,7 +143,7 @@ class GeminiChatbot:
                     "setup": {
                         "model": MODEL_ID,
                         "generationConfig": {
-                            "responseModalities": ["AUDIO", "TEXT"],
+                            "responseModalities": ["AUDIO"],
                             "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "Charon"}}}
                         },
                         "systemInstruction": {
