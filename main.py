@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from database import init_db, get_db, Order, CallLog
-import aiohttp
+from database import init_db, get_db, Order, CallLog
 
 # --- CONFIGURATION ---
 load_dotenv()
@@ -47,65 +47,7 @@ def save_order(item: str, quantity: int, price: float, customer_name: str, addre
     except Exception as e:
         logger.error(f"❌ DB ERROR: {e}")
 
-async def extract_order_via_llm(text_buffer: str) -> dict:
-    # 1. Primary Method: Robust Regex Extraction
-    try:
-        pattern = re.compile(r"\{[^{}]*\"item\"[^{}]*\"address\"[^{}]*\}", re.IGNORECASE | re.DOTALL)
-        matches = pattern.finditer(text_buffer)
-        last_valid = None
-        for match in matches:
-            try:
-                parsed = json.loads(match.group(0))
-                if "item" in parsed and "address" in parsed:
-                    last_valid = parsed
-            except Exception:
-                pass
-        
-        if last_valid:
-            logger.info("✅ Extracted order via Regex successfully!")
-            return last_valid
-    except Exception as e:
-        logger.error(f"Regex extraction failed: {e}")
 
-    # 2. Fallback Method: Secondary LLM Extraction 
-    # Try multiple models to avoid 404/503 issues
-    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
-    
-    for model in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GOOGLE_API_KEY}"
-        payload = {
-            "contents": [{
-                "parts": [{"text": f"Extract the customer order details from the following complete context. If a piece of information is completely missing, do NOT hallucinate placeholders. Use the exact word 'Unknown' for text, and 0 for numbers. Text: {text_buffer}"}]
-            }],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "responseSchema": {
-                  "type": "OBJECT",
-                  "properties": {
-                    "item": {"type": "STRING"},
-                    "quantity": {"type": "INTEGER"},
-                    "price": {"type": "NUMBER"},
-                    "name": {"type": "STRING"},
-                    "address": {"type": "STRING"}
-                  },
-                  "required": ["item", "quantity", "price", "name", "address"]
-                }
-            }
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        text_resp = data["candidates"][0]["content"]["parts"][0]["text"]
-                        logger.info(f"✅ Extracted order via Secondary LLM ({model}) successfully!")
-                        return json.loads(text_resp)
-                    else:
-                        logger.warning(f"Secondary LLM ({model}) failed with status {resp.status}. Trying next...")
-        except Exception as e:
-            logger.error(f"Secondary LLM ({model}) Extraction Failed: {e}")
-    
-    return None
 
 TOOL_DEFINITIONS = []
 
@@ -244,27 +186,7 @@ class GeminiChatbot:
                                                 except:
                                                     pass
                                         
-                                        # Method 3: LLM fallback — triggered when AI seems to be confirming order
-                                        # Uses ANY confirmation signal (removed strict "address" requirement — AI often says
-                                        # "delivered to X" instead of "address: X", which previously blocked this trigger)
-                                        _buf = assistant_text_buffer.lower()
-                                        _confirmation_signals = [
-                                            "theek hai" in _buf,
-                                            "[new_order]" in _buf,
-                                            "order is now complete" in _buf,
-                                            "order confirm" in _buf,
-                                            "order confirm ho gaya" in _buf,
-                                            "deliver hoga" in _buf,           # Final verbal confirmation phrase
-                                            "formulate the order" in _buf,
-                                            "generating the new_order" in _buf,
-                                            "all required details" in _buf and ("name" in _buf and "address" in _buf),
-                                        ]
-                                        if not order_data and any(_confirmation_signals):
-                                            try:
-                                                order_data = await extract_order_via_llm(full_conversation_history)
-                                                logger.info(f"LLM extraction result: {order_data}")
-                                            except Exception as e:
-                                                logger.error(f"Failed to extract order JSON via LLM: {e}")
+
                                                 
                                         # Validate and save if we successfully extracted order data
                                         if order_data and "item" in order_data and order_data["item"] != "Unknown":
@@ -330,10 +252,21 @@ app.include_router(twilio_router)
 
 # Serve built React frontend (must be LAST — after all API routes)
 import os
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
 frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-if os.path.exists(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    if not os.path.exists(frontend_dist):
+        return {"error": "Frontend not built"}
+    file_path = os.path.join(frontend_dist, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    index_path = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"error": "Not found"}
 
 if __name__ == "__main__":
     import uvicorn
