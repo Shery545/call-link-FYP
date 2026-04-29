@@ -112,9 +112,9 @@ class GeminiChatbot:
                             6. Once you have the customer's name and address, you MUST verbally confirm the full order back to the customer word for word. Say exactly:
                                "Theek hai! Order confirm ho gaya. [CUSTOMER NAME], aapka [QUANTITY]x [ITEM] Rs.[PRICE] ka, deliver hoga [ADDRESS] pe."
                                Replace the brackets with the actual values from the conversation.
-                            7. After saying this confirmation out loud, you MUST write the following JSON in your internal text output on a single line:
+                            7. IN THE EXACT SAME RESPONSE as your verbal confirmation, you MUST write the following JSON in your text output on a single line:
                                [NEW_ORDER]: {{"item": "<item>", "quantity": <number>, "price": <number>, "name": "<customer name>", "address": "<delivery address>"}}
-                            8. The JSON values must be the REAL values from the conversation — never use placeholders like <item> or Unknown.
+                            8. The JSON values must be the REAL values from the conversation. DO NOT wait for the next turn. Output it immediately!
                             9. Only output [NEW_ORDER] once, after the order is 100% confirmed with name and address.
                             """}]
                         }
@@ -146,6 +146,15 @@ class GeminiChatbot:
                     try:
                         async for msg in self.ws:
                             response = json.loads(msg)
+
+                            if "setupComplete" in response:
+                                logger.info("✅ Setup complete, sending initial greeting trigger...")
+                                await self.ws.send(json.dumps({
+                                    "clientContent": {
+                                        "turns": [{"role": "user", "parts": [{"text": "hello"}]}],
+                                        "turnComplete": True
+                                    }
+                                }))
 
                             if "serverContent" in response:
                                 parts = response["serverContent"].get("modelTurn", {}).get("parts", [])
@@ -185,9 +194,19 @@ class GeminiChatbot:
                                                     logger.info(f"✅ Extracted order via generic regex: {order_data}")
                                                 except:
                                                     pass
-                                        
-
-                                                
+                                        # Method 3: Extract directly from the verbal confirmation phrase
+                                        if not order_data:
+                                            spoken_pattern = re.compile(r"Order confirm ho gaya\.\s*([^,]+),\s*aapka\s*(\d+)x\s*(.+?)\s*Rs\.?(\d+(?:\.\d+)?)\s*ka,\s*deliver hoga\s*(.+?)\s*pe", re.IGNORECASE)
+                                            spoken_match = spoken_pattern.search(assistant_text_buffer)
+                                            if spoken_match:
+                                                order_data = {
+                                                    "name": spoken_match.group(1).strip(),
+                                                    "quantity": int(spoken_match.group(2)),
+                                                    "item": spoken_match.group(3).strip(),
+                                                    "price": float(spoken_match.group(4)),
+                                                    "address": spoken_match.group(5).strip()
+                                                }
+                                                logger.info(f"✅ Extracted order via verbal confirmation regex: {order_data}")
                                         # Validate and save if we successfully extracted order data
                                         if order_data and "item" in order_data and order_data["item"] != "Unknown":
                                             name = str(order_data.get("name", "Unknown")).strip()
